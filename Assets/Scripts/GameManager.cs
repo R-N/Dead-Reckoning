@@ -34,6 +34,8 @@ public class GameManager : MonoBehaviour
 
     public PlayerController player1 = null;
     public PlayerController player2 = null;
+    bool recordingRunStarted = false;
+    bool recordingFinalized = false;
 
     void Awake()
     {
@@ -102,6 +104,8 @@ public class GameManager : MonoBehaviour
         this.frame = 0;
         this.welcomePanel.SetActive(false);
         this.active = true;
+        this.recordingRunStarted = this.recordingEnabled;
+        this.recordingFinalized = false;
     }
 
     public void RestartGame()
@@ -124,10 +128,76 @@ public class GameManager : MonoBehaviour
 
     public void SavePlayerStates()
     {
-        SavePlayerStates(this.player1);
-        SavePlayerStates(this.player2);
-        player1.camManager.SaveBuffers();
-        player2.camManager.SaveBuffers();
+        if (!this.DrainCameraBuffers())
+        {
+            this.DeleteRecordingDirectory();
+            return;
+        }
+
+        try
+        {
+            SavePlayerStates(this.player1);
+            SavePlayerStates(this.player2);
+            this.recordingFinalized = true;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("Failed to finalize recording: " + exception.Message);
+            this.DeleteRecordingDirectory();
+        }
+    }
+
+    bool DrainCameraBuffers()
+    {
+        bool player1Drained = false;
+        bool player2Drained = false;
+
+        try
+        {
+            player1Drained = player1 != null && player1.camManager != null && player1.camManager.SaveBuffers();
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("Failed to drain player 1 camera recording: " + exception.Message);
+        }
+
+        try
+        {
+            player2Drained = player2 != null && player2.camManager != null && player2.camManager.SaveBuffers();
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("Failed to drain player 2 camera recording: " + exception.Message);
+        }
+
+        return player1Drained && player2Drained;
+    }
+
+    void DeleteRecordingDirectory()
+    {
+        try
+        {
+            string directory = this.GetTimestampPath();
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError("Failed to delete incomplete recording directory: " + exception.Message);
+        }
+    }
+
+    void OnApplicationQuit()
+    {
+        if (!this.recordingRunStarted || this.recordingFinalized)
+        {
+            return;
+        }
+
+        this.DrainCameraBuffers();
+        this.DeleteRecordingDirectory();
     }
 
     public void SavePlayerStates(PlayerController player)
